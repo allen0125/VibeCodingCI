@@ -1,18 +1,20 @@
 from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.orm import Session
-from database import get_db, create_tables, WebhookEvent
-from models import LinearWebhookPayload, WebhookEventResponse
+from sqlmodel import Session, select
+from typing import List
 import json
 
-app = FastAPI(title="Linear Webhook Handler", version="1.0.0")
+from database import get_session, create_db_and_tables
+from models import LinearWebhookPayload, WebhookEvent
+
+app = FastAPI(title="Linear Webhook Handler", version="2.0.0")
 
 # 创建数据库表
-create_tables()
+create_db_and_tables()
 
 @app.post("/webhook/linear")
 async def handle_linear_webhook(
     payload: LinearWebhookPayload,
-    db: Session = Depends(get_db)
+    session: Session = Depends(get_session)
 ):
     """处理 Linear webhook 请求"""
     try:
@@ -21,7 +23,7 @@ async def handle_linear_webhook(
         action = payload.action
         data = payload.data
         
-        # 获取 Linear ID（根据事件类型不同，ID 字段可能不同）
+        # 获取 Linear ID
         linear_id = data.get("id", "unknown")
         
         # 创建数据库记录
@@ -29,13 +31,13 @@ async def handle_linear_webhook(
             event_type=event_type,
             linear_id=linear_id,
             action=action,
-            data=data,
-            raw_payload=json.dumps(payload.dict())
+            data=data,  # 直接使用字典，SQLModel 会自动处理
+            raw_payload=json.dumps(payload.model_dump())
         )
         
-        db.add(webhook_event)
-        db.commit()
-        db.refresh(webhook_event)
+        session.add(webhook_event)
+        session.commit()
+        session.refresh(webhook_event)
         
         return {
             "status": "success",
@@ -44,26 +46,28 @@ async def handle_linear_webhook(
         }
         
     except Exception as e:
-        db.rollback()
+        session.rollback()
         raise HTTPException(status_code=500, detail=f"处理 webhook 时出错: {str(e)}")
 
 @app.get("/webhook/events")
 async def get_webhook_events(
     skip: int = 0,
     limit: int = 100,
-    db: Session = Depends(get_db)
+    session: Session = Depends(get_session)
 ):
     """获取 webhook 事件列表"""
-    events = db.query(WebhookEvent).offset(skip).limit(limit).all()
+    statement = select(WebhookEvent).offset(skip).limit(limit)
+    events = session.exec(statement).all()
     return events
 
 @app.get("/webhook/events/{event_id}")
 async def get_webhook_event(
     event_id: int,
-    db: Session = Depends(get_db)
+    session: Session = Depends(get_session)
 ):
     """获取特定 webhook 事件"""
-    event = db.query(WebhookEvent).filter(WebhookEvent.id == event_id).first()
+    statement = select(WebhookEvent).where(WebhookEvent.id == event_id)
+    event = session.exec(statement).first()
     if not event:
         raise HTTPException(status_code=404, detail="事件未找到")
     return event

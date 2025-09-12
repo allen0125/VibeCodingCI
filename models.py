@@ -1,22 +1,24 @@
-from pydantic import BaseModel
+from sqlmodel import SQLModel, Field
+from sqlalchemy import Column, JSON
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-class LinearWebhookPayload(BaseModel):
+class LinearWebhookPayload(SQLModel):
+    """Linear Webhook 请求载荷模型"""
     action: str
     data: Dict[str, Any]
     type: str
     url: Optional[str] = None
     created_at: Optional[str] = None
 
-class WebhookEventResponse(BaseModel):
-    id: int
-    event_type: str
-    linear_id: str
-    action: str
-    data: Optional[Dict[str, Any]]
-    created_at: datetime
-    raw_payload: Optional[str]
-
-    class Config:
-        from_attributes = True
+class WebhookEvent(SQLModel, table=True):
+    """Webhook 事件数据库模型"""
+    __tablename__ = "webhook_events"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    event_type: str = Field(max_length=100)
+    linear_id: str = Field(max_length=100)
+    action: str = Field(max_length=50)
+    data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    raw_payload: Optional[str] = None

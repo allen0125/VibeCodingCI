@@ -1,31 +1,26 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, JSON
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from datetime import datetime
+from sqlmodel import SQLModel, create_engine, Session
+from typing import Generator
+import os
 
-DATABASE_URL = "sqlite:///./linear_webhook.db"
+# 数据库配置
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./linear_webhook.db")
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+# 创建数据库引擎
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
+    echo=False,  # 设置为 True 可以看到 SQL 查询日志
+)
 
-class WebhookEvent(Base):
-    __tablename__ = "webhook_events"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    event_type = Column(String(100), nullable=False)
-    linear_id = Column(String(100), nullable=False)
-    action = Column(String(50), nullable=False)
-    data = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    raw_payload = Column(Text, nullable=True)
+def create_db_and_tables():
+    """创建数据库和表"""
+    SQLModel.metadata.create_all(engine)
+
+def get_session() -> Generator[Session, None, None]:
+    """获取数据库会话的依赖注入函数"""
+    with Session(engine) as session:
+        yield session
 
 def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-def create_tables():
-    Base.metadata.create_all(bind=engine)
+    """向后兼容的数据库会话获取函数"""
+    return get_session()
