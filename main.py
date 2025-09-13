@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 
 from database import get_session, create_db_and_tables
 from models import LinearWebhookPayload, WebhookEvent
+from vibe import Vibe
 
 # 优先加载 .env 文件中的环境变量
 load_dotenv()
@@ -215,36 +216,15 @@ def call_aider_with_linear_event(formatted_prompt: str, woodenman_path: str, lin
 *📋 标签: `linear-integration`, `auto-generated`*
 """
         
-        # 创建临时文件存储 prompt
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-            f.write(formatted_prompt)
-            temp_file = f.name
-        
+        # 使用 Vibe 类调用 aider
         try:
-            # 构建 aider 命令
-            aider_cmd = [
-                "aider",
-                "--yes",  # 自动确认
-                "--auto-commits",  # 自动提交
-                "--model", os.getenv("AIDER_OPENAI_MODEL", "deepseek-chat"),
-                "--api-key", os.getenv("AIDER_OPENAI_API_KEY", ""),
-                "--api-base", os.getenv("AIDER_OPENAI_API_BASE", "https://api.deepseek.com/v1"),
-                "--input", temp_file,
-                woodenman_path
-            ]
+            vibe = Vibe(woodenman_path)
+            logger.info("使用 Vibe 类调用 aider")
             
-            logger.info(f"执行 aider 命令: {' '.join(aider_cmd[:6])}...")
+            # 调用 vibe.code 方法
+            aider_result = vibe.code(formatted_prompt)
             
-            # 执行 aider 命令
-            result = subprocess.run(
-                aider_cmd,
-                cwd=os.path.dirname(woodenman_path),
-                capture_output=True,
-                text=True,
-                timeout=300  # 5分钟超时
-            )
-            
-            aider_success = result.returncode == 0
+            aider_success = aider_result.get("success", False)
             
             if aider_success:
                 logger.info("aider 执行成功，开始创建分支和 PR")
@@ -255,34 +235,30 @@ def call_aider_with_linear_event(formatted_prompt: str, woodenman_path: str, lin
                 return {
                     "success": True,
                     "aider_success": True,
-                    "aider_stdout": result.stdout,
-                    "aider_stderr": result.stderr,
+                    "aider_stdout": aider_result.get("stdout", ""),
+                    "aider_stderr": aider_result.get("stderr", ""),
                     "branch_name": branch_name,
                     "pr_result": pr_result
                 }
             else:
-                logger.error(f"aider 执行失败，返回码: {result.returncode}")
-                logger.error(f"错误输出: {result.stderr}")
+                logger.error(f"aider 执行失败，返回码: {aider_result.get('returncode', -1)}")
+                logger.error(f"错误输出: {aider_result.get('stderr', 'Unknown error')}")
                 return {
                     "success": False,
                     "aider_success": False,
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
-                    "returncode": result.returncode
+                    "stdout": aider_result.get("stdout", ""),
+                    "stderr": aider_result.get("stderr", ""),
+                    "returncode": aider_result.get("returncode", -1)
                 }
                 
-        finally:
-            # 清理临时文件
-            if os.path.exists(temp_file):
-                os.unlink(temp_file)
+        except Exception as vibe_error:
+            logger.error(f"Vibe 调用失败: {str(vibe_error)}")
+            return {
+                "success": False,
+                "error": f"Vibe 调用失败: {str(vibe_error)}",
+                "returncode": -1
+            }
                 
-    except subprocess.TimeoutExpired:
-        logger.error("aider 执行超时")
-        return {
-            "success": False,
-            "error": "aider 执行超时",
-            "returncode": -1
-        }
     except Exception as e:
         logger.error(f"调用 aider 时出错: {str(e)}")
         return {

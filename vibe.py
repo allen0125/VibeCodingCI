@@ -5,6 +5,10 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 import json
 import logging
+from dotenv import load_dotenv
+
+# 优先加载 .env 文件中的环境变量
+load_dotenv()
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -82,9 +86,21 @@ class Vibe:
             # 添加需求作为消息
             cmd.extend(["--message", requirements])
             
-            # 设置工作目录
+            # 设置工作目录和环境变量
             env = os.environ.copy()
             env["AIDER_WORK_DIR"] = str(self.project_path)
+            
+            # 从 .env 文件加载 aider 相关环境变量
+            aider_api_key = os.getenv("AIDER_OPENAI_API_KEY")
+            aider_api_base = os.getenv("AIDER_OPENAI_API_BASE")
+            aider_model = os.getenv("AIDER_OPENAI_MODEL")
+            
+            if aider_api_key:
+                env["OPENAI_API_KEY"] = aider_api_key
+            if aider_api_base:
+                env["OPENAI_API_BASE"] = aider_api_base
+            if aider_model:
+                env["AIDER_MODEL"] = aider_model
             
             logger.info(f"执行命令: {' '.join(cmd)}")
             logger.info(f"工作目录: {self.project_path}")
@@ -160,6 +176,17 @@ class Vibe:
             "aider_path": self.aider_path
         }
     
+    def get_env_config(self) -> Dict[str, Any]:
+        """获取环境变量配置信息"""
+        return {
+            "aider_openai_api_key": "已配置" if os.getenv("AIDER_OPENAI_API_KEY") else "未配置",
+            "aider_openai_api_base": os.getenv("AIDER_OPENAI_API_BASE", "未配置"),
+            "aider_openai_model": os.getenv("AIDER_OPENAI_MODEL", "未配置"),
+            "openai_api_key": "已配置" if os.getenv("OPENAI_API_KEY") else "未配置",
+            "openai_api_base": os.getenv("OPENAI_API_BASE", "未配置"),
+            "aider_model": os.getenv("AIDER_MODEL", "未配置")
+        }
+    
     def interactive_mode(self, requirements: str, files: Optional[List[str]] = None):
         """
         交互模式 - 直接与 Aider 交互
@@ -182,11 +209,27 @@ class Vibe:
             
             cmd.extend(["--message", requirements])
             
+            # 设置环境变量
+            env = os.environ.copy()
+            env["AIDER_WORK_DIR"] = str(self.project_path)
+            
+            # 从 .env 文件加载 aider 相关环境变量
+            aider_api_key = os.getenv("AIDER_OPENAI_API_KEY")
+            aider_api_base = os.getenv("AIDER_OPENAI_API_BASE")
+            aider_model = os.getenv("AIDER_OPENAI_MODEL")
+            
+            if aider_api_key:
+                env["OPENAI_API_KEY"] = aider_api_key
+            if aider_api_base:
+                env["OPENAI_API_BASE"] = aider_api_base
+            if aider_model:
+                env["AIDER_MODEL"] = aider_model
+            
             logger.info(f"启动交互模式，命令: {' '.join(cmd)}")
             logger.info(f"工作目录: {self.project_path}")
             
             # 直接运行 Aider，不捕获输出
-            subprocess.run(cmd, cwd=self.project_path)
+            subprocess.run(cmd, cwd=self.project_path, env=env)
             
         except KeyboardInterrupt:
             logger.info("用户中断了交互模式")
@@ -205,6 +248,10 @@ if __name__ == "__main__":
         # 获取项目信息
         info = vibe.get_project_info()
         print(f"项目信息: {json.dumps(info, indent=2, ensure_ascii=False)}")
+        
+        # 获取环境变量配置
+        env_config = vibe.get_env_config()
+        print(f"环境变量配置: {json.dumps(env_config, indent=2, ensure_ascii=False)}")
         
         # 执行编码任务
         requirements = "添加错误处理和日志记录"
