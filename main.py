@@ -257,6 +257,19 @@ def call_aider_with_linear_event(formatted_prompt: str, woodenman_path: str, lin
         title = linear_event_info.get('title', 'Event')
         entity_type = linear_event_info.get('entity_type', 'Unknown')
         
+        # 清理标题，移除重复的 "Linear CREATE" 文本
+        if title and "Linear CREATE" in title:
+            # 提取最后一个有意义的部分
+            parts = title.split("Linear CREATE")
+            if len(parts) > 1:
+                # 取最后一个部分，并清理
+                clean_title = parts[-1].strip()
+                if clean_title.startswith(": "):
+                    clean_title = clean_title[2:]
+                title = clean_title if clean_title else "Linear Event"
+            else:
+                title = "Linear Event"
+        
         # 构建 Linear Issue 链接和引用
         linear_url = linear_event_info.get('linear_url', '')
         linear_identifier = linear_event_info.get('linear_identifier', '')
@@ -424,6 +437,43 @@ async def handle_linear_webhook(
         
         # 获取实体 ID
         entity_id = data.get("id", "unknown")
+        
+        # 过滤掉自己创建的 PR 事件，避免死循环
+        if entity_type == "Attachment" and action == "create":
+            title = data.get("title", "")
+            if "Linear CREATE" in title or "Linear UPDATE" in title:
+                logger.info(f"🚫 跳过自己创建的 PR 事件: {title}")
+                return {
+                    "status": "skipped",
+                    "message": "跳过自己创建的 PR 事件，避免死循环",
+                    "entity_type": entity_type,
+                    "action": action,
+                    "entity_id": entity_id
+                }
+        
+        # 检查是否最近处理过相同的事件（防重复处理）
+        recent_events = session.exec(
+            select(WebhookEvent)
+            .where(WebhookEvent.entity_id == entity_id)
+            .where(WebhookEvent.entity_type == entity_type)
+            .where(WebhookEvent.action == action)
+            .order_by(WebhookEvent.created_at.desc())
+            .limit(1)
+        ).first()
+        
+        if recent_events and recent_events.created_at:
+            import datetime
+            time_diff = datetime.datetime.now() - recent_events.created_at
+            if time_diff.total_seconds() < 30:  # 30秒内不重复处理
+                logger.info(f"🚫 跳过重复事件，距离上次处理仅 {time_diff.total_seconds():.1f} 秒")
+                return {
+                    "status": "skipped",
+                    "message": "跳过重复事件，避免频繁处理",
+                    "entity_type": entity_type,
+                    "action": action,
+                    "entity_id": entity_id,
+                    "last_processed": recent_events.created_at.isoformat()
+                }
         
         # 创建数据库记录
         webhook_event = WebhookEvent(
