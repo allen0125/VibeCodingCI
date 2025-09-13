@@ -43,6 +43,7 @@ def format_issue_for_aider(action: str, data: dict) -> str:
     team = data.get("team", {})
     assignee = data.get("assignee", {})
     url = data.get("url", "")
+    labels = data.get("labels", [])
     
     prompt = f"Linear Issue {action.upper()}: {identifier} - {title}\n"
     prompt += f"Team: {team.get('name', 'Unknown')} ({team.get('key', '')})\n"
@@ -51,10 +52,25 @@ def format_issue_for_aider(action: str, data: dict) -> str:
     if assignee:
         prompt += f"Assignee: {assignee.get('name', 'Unknown')}\n"
     
+    # 重点显示标签信息，特别是 vibe-coding 标签
+    if labels:
+        label_names = [label.get("name", "") for label in labels]
+        prompt += f"Labels: {', '.join(label_names)}\n"
+        
+        # 特别标注 vibe-coding 标签
+        if any(label.get("name", "").lower() == "vibe-coding" for label in labels):
+            prompt += f"🎯 VIBE-CODING LABEL DETECTED - This issue requires AI coding assistance!\n"
+    
     if description:
         prompt += f"Description:\n{description}\n"
     
     prompt += f"URL: {url}\n"
+    
+    # 添加 AI 编码指导
+    prompt += f"\n🤖 AI CODING TASK:\n"
+    prompt += f"Please analyze this Linear Issue and implement the requested changes in the WoodenMan project.\n"
+    prompt += f"Focus on the issue description and any specific requirements mentioned.\n"
+    prompt += f"Make sure to create meaningful commits and a clear PR description.\n"
     
     return prompt
 
@@ -257,46 +273,36 @@ def call_aider_with_linear_event(formatted_prompt: str, woodenman_path: str, lin
         title = linear_event_info.get('title', 'Event')
         entity_type = linear_event_info.get('entity_type', 'Unknown')
         
-        # 清理标题，移除重复的 "Linear CREATE" 文本
-        if title and "Linear CREATE" in title:
-            # 提取最后一个有意义的部分
-            parts = title.split("Linear CREATE")
-            if len(parts) > 1:
-                # 取最后一个部分，并清理
-                clean_title = parts[-1].strip()
-                if clean_title.startswith(": "):
-                    clean_title = clean_title[2:]
-                title = clean_title if clean_title else "Linear Event"
-            else:
-                title = "Linear Event"
-        
         # 构建 Linear Issue 链接和引用
         linear_url = linear_event_info.get('linear_url', '')
         linear_identifier = linear_event_info.get('linear_identifier', '')
         
-        branch_name = f"linear-{action}-{entity_id[:8]}"
-        pr_title = f"[{linear_identifier}] Linear {action.upper()}: {title}"
+        branch_name = f"vibe-coding-{entity_id[:8]}"
+        pr_title = f"[{linear_identifier}] Vibe Coding: {title}"
         
         # 创建 PR 描述，包含 Linear Issue 关联
-        pr_body = f"""## 🔗 Linear Issue 关联
+        pr_body = f"""## 🎯 Vibe Coding 任务
 
 **Linear Issue**: [{linear_identifier}]({linear_url})
 **Linear URL**: {linear_url}
-**事件类型**: {entity_type} {action.upper()}
+**触发条件**: Issue 添加了 `vibe-coding` 标签
 **实体 ID**: {entity_id}
 
-## 📝 事件详情
+## 📝 Issue 详情
 
 **标题**: {title}
 **处理时间**: {linear_event_info.get('created_at', 'Unknown')}
 
-## 🤖 AI 处理结果
+## 🤖 AI 编码任务
 
+此 PR 由 AI 根据 Linear Issue 的 `vibe-coding` 标签自动触发。
+
+**任务描述**:
 {formatted_prompt}
 
 ## 📋 变更说明
 
-此 PR 由 Linear Webhook Handler 根据 Linear Issue 变更自动创建。
+此 PR 由 Linear Webhook Handler 根据 Issue 的 `vibe-coding` 标签自动创建。
 
 **关联的 Linear Issue**: [{linear_identifier}]({linear_url})
 **Linear 链接**: {linear_url}
@@ -306,8 +312,8 @@ def call_aider_with_linear_event(formatted_prompt: str, woodenman_path: str, lin
 - [Linear 工作区](https://linear.app)
 
 ---
-*🤖 此 PR 由 Linear Webhook Handler 自动创建并关联到 Linear Issue*
-*📋 自动生成*
+*🤖 此 PR 由 Linear Webhook Handler 根据 `vibe-coding` 标签自动创建*
+*📋 标签触发: `vibe-coding`*
 """
         
         # 直接创建分支和 PR，aider 调用将在 create_branch_and_pr 中进行
@@ -438,18 +444,49 @@ async def handle_linear_webhook(
         # 获取实体 ID
         entity_id = data.get("id", "unknown")
         
-        # 过滤掉自己创建的 PR 事件，避免死循环
-        if entity_type == "Attachment" and action == "create":
-            title = data.get("title", "")
-            if "Linear CREATE" in title or "Linear UPDATE" in title:
-                logger.info(f"🚫 跳过自己创建的 PR 事件: {title}")
-                return {
-                    "status": "skipped",
-                    "message": "跳过自己创建的 PR 事件，避免死循环",
-                    "entity_type": entity_type,
-                    "action": action,
-                    "entity_id": entity_id
-                }
+        # 只处理 Issue 标签变更事件，且必须包含 vibe-coding 标签
+        if entity_type != "Issue" or action != "update":
+            logger.info(f"🚫 跳过非 Issue 更新事件: {entity_type} - {action}")
+            return {
+                "status": "skipped",
+                "message": f"只处理 Issue 更新事件，当前事件: {entity_type} - {action}",
+                "entity_type": entity_type,
+                "action": action,
+                "entity_id": entity_id
+            }
+        
+        # 检查是否有标签变更
+        labels = data.get("labels", [])
+        if not labels:
+            logger.info(f"🚫 跳过没有标签的 Issue 事件: {entity_id}")
+            return {
+                "status": "skipped",
+                "message": "Issue 没有标签信息",
+                "entity_type": entity_type,
+                "action": action,
+                "entity_id": entity_id
+            }
+        
+        # 检查是否包含 vibe-coding 标签
+        has_vibe_coding_label = any(
+            label.get("name", "").lower() == "vibe-coding" 
+            for label in labels
+        )
+        
+        if not has_vibe_coding_label:
+            logger.info(f"🚫 跳过不包含 vibe-coding 标签的 Issue: {entity_id}")
+            logger.info(f"当前标签: {[label.get('name', '') for label in labels]}")
+            return {
+                "status": "skipped",
+                "message": "Issue 不包含 vibe-coding 标签",
+                "entity_type": entity_type,
+                "action": action,
+                "entity_id": entity_id,
+                "current_labels": [label.get("name", "") for label in labels]
+            }
+        
+        logger.info(f"✅ 检测到包含 vibe-coding 标签的 Issue 更新事件: {entity_id}")
+        logger.info(f"标签列表: {[label.get('name', '') for label in labels]}")
         
         # 检查是否最近处理过相同的事件（防重复处理）
         recent_events = session.exec(
