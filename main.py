@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from sqlmodel import Session, select
 from typing import List
 import json
@@ -13,25 +13,38 @@ create_db_and_tables()
 
 @app.post("/webhook/linear")
 async def handle_linear_webhook(
+    request: Request,
     payload: LinearWebhookPayload,
     session: Session = Depends(get_session)
 ):
-    """处理 Linear webhook 请求"""
+    """处理 Linear webhook 请求 - 2025 最新结构"""
     try:
+        # 提取 HTTP 头部信息
+        linear_delivery = request.headers.get("Linear-Delivery")
+        linear_event = request.headers.get("Linear-Event")
+        linear_signature = request.headers.get("Linear-Signature")
+        
         # 提取基本信息
-        event_type = payload.type
+        entity_type = payload.type
         action = payload.action
         data = payload.data
         
-        # 获取 Linear ID
-        linear_id = data.get("id", "unknown")
+        # 获取实体 ID
+        entity_id = data.get("id", "unknown")
         
         # 创建数据库记录
         webhook_event = WebhookEvent(
-            event_type=event_type,
-            linear_id=linear_id,
+            linear_delivery=linear_delivery,
+            linear_event=linear_event,
+            linear_signature=linear_signature,
             action=action,
-            data=data,  # 直接使用字典，SQLModel 会自动处理
+            entity_type=entity_type,
+            entity_id=entity_id,
+            entity_url=payload.url,
+            data=data,
+            updated_from=payload.updated_from,
+            webhook_timestamp=payload.webhook_timestamp,
+            webhook_id=payload.webhook_id,
             raw_payload=json.dumps(payload.model_dump())
         )
         
@@ -41,8 +54,9 @@ async def handle_linear_webhook(
         
         return {
             "status": "success",
-            "message": f"Webhook event {action} for {event_type} processed",
-            "event_id": webhook_event.id
+            "message": f"Webhook event {action} for {entity_type} processed",
+            "event_id": webhook_event.id,
+            "linear_delivery": linear_delivery
         }
         
     except Exception as e:
@@ -53,10 +67,23 @@ async def handle_linear_webhook(
 async def get_webhook_events(
     skip: int = 0,
     limit: int = 100,
+    entity_type: str = None,
+    action: str = None,
     session: Session = Depends(get_session)
 ):
-    """获取 webhook 事件列表"""
-    statement = select(WebhookEvent).offset(skip).limit(limit)
+    """获取 webhook 事件列表 - 支持过滤"""
+    statement = select(WebhookEvent)
+    
+    # 添加过滤条件
+    if entity_type:
+        statement = statement.where(WebhookEvent.entity_type == entity_type)
+    if action:
+        statement = statement.where(WebhookEvent.action == action)
+    
+    # 按创建时间降序排列
+    statement = statement.order_by(WebhookEvent.created_at.desc())
+    statement = statement.offset(skip).limit(limit)
+    
     events = session.exec(statement).all()
     return events
 
@@ -67,6 +94,18 @@ async def get_webhook_event(
 ):
     """获取特定 webhook 事件"""
     statement = select(WebhookEvent).where(WebhookEvent.id == event_id)
+    event = session.exec(statement).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="事件未找到")
+    return event
+
+@app.get("/webhook/events/by-linear/{linear_delivery}")
+async def get_webhook_event_by_linear_delivery(
+    linear_delivery: str,
+    session: Session = Depends(get_session)
+):
+    """根据 Linear Delivery ID 获取事件"""
+    statement = select(WebhookEvent).where(WebhookEvent.linear_delivery == linear_delivery)
     event = session.exec(statement).first()
     if not event:
         raise HTTPException(status_code=404, detail="事件未找到")
