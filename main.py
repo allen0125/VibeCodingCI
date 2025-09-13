@@ -14,6 +14,70 @@ from models import LinearWebhookPayload, WebhookEvent
 # 优先加载 .env 文件中的环境变量
 load_dotenv()
 
+def format_linear_event_for_aider(event_data: dict) -> str:
+    """将 Linear 事件格式化为 aider prompt"""
+    action = event_data.get("action", "")
+    entity_type = event_data.get("entity_type", "")
+    data = event_data.get("data", {})
+    
+    if entity_type == "Issue":
+        return format_issue_for_aider(action, data)
+    elif entity_type == "Comment":
+        return format_comment_for_aider(action, data)
+    elif entity_type == "Reaction":
+        return format_reaction_for_aider(action, data)
+    else:
+        return f"Linear {entity_type} {action}: {json.dumps(data, ensure_ascii=False, indent=2)}"
+
+def format_issue_for_aider(action: str, data: dict) -> str:
+    """格式化 Issue 事件为 aider prompt"""
+    title = data.get("title", "")
+    identifier = data.get("identifier", "")
+    description = data.get("description", "")
+    state = data.get("state", {})
+    team = data.get("team", {})
+    assignee = data.get("assignee", {})
+    url = data.get("url", "")
+    
+    prompt = f"Linear Issue {action.upper()}: {identifier} - {title}\n"
+    prompt += f"Team: {team.get('name', 'Unknown')} ({team.get('key', '')})\n"
+    prompt += f"State: {state.get('name', 'Unknown')}\n"
+    
+    if assignee:
+        prompt += f"Assignee: {assignee.get('name', 'Unknown')}\n"
+    
+    if description:
+        prompt += f"Description:\n{description}\n"
+    
+    prompt += f"URL: {url}\n"
+    
+    return prompt
+
+def format_comment_for_aider(action: str, data: dict) -> str:
+    """格式化 Comment 事件为 aider prompt"""
+    body = data.get("body", "")
+    user = data.get("user", {})
+    issue = data.get("issue", {})
+    
+    prompt = f"Linear Comment {action.upper()}\n"
+    prompt += f"User: {user.get('name', 'Unknown')}\n"
+    prompt += f"Issue: {issue.get('identifier', 'Unknown')} - {issue.get('title', '')}\n"
+    prompt += f"Comment:\n{body}\n"
+    
+    return prompt
+
+def format_reaction_for_aider(action: str, data: dict) -> str:
+    """格式化 Reaction 事件为 aider prompt"""
+    emoji = data.get("emoji", "")
+    user = data.get("user", {})
+    comment = data.get("comment", {})
+    
+    prompt = f"Linear Reaction {action.upper()}: {emoji}\n"
+    prompt += f"User: {user.get('name', 'Unknown')}\n"
+    prompt += f"Comment: {comment.get('body', '')[:100]}{'...' if len(comment.get('body', '')) > 100 else ''}\n"
+    
+    return prompt
+
 app = FastAPI(title="Linear Webhook Handler", version="2.0.0")
 
 # 配置日志
