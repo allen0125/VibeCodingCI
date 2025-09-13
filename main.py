@@ -2,6 +2,9 @@ from fastapi import FastAPI, Depends, HTTPException, Request
 from sqlmodel import Session, select
 from typing import List
 import json
+import hmac
+import hashlib
+import os
 
 from database import get_session, create_db_and_tables
 from models import LinearWebhookPayload, WebhookEvent
@@ -11,18 +14,45 @@ app = FastAPI(title="Linear Webhook Handler", version="2.0.0")
 # 创建数据库表
 create_db_and_tables()
 
+def verify_linear_signature(signature: str, body: bytes) -> bool:
+    """验证 Linear webhook 签名"""
+    secret = os.getenv("LINEAR_WEBHOOK_SECRET")
+    if not secret:
+        return True  # 如果没有配置密钥，跳过验证
+    
+    if not signature or not signature.startswith("sha256="):
+        return False
+    
+    expected = hmac.new(
+        secret.encode('utf-8'),
+        body,
+        hashlib.sha256
+    ).hexdigest()
+    
+    return hmac.compare_digest(signature[7:], expected)
+
 @app.post("/webhook/linear")
 async def handle_linear_webhook(
     request: Request,
-    payload: LinearWebhookPayload,
     session: Session = Depends(get_session)
 ):
     """处理 Linear webhook 请求 - 2025 最新结构"""
     try:
+        # 获取原始请求体进行签名验证
+        body = await request.body()
+        linear_signature = request.headers.get("Linear-Signature")
+        
+        # 验证签名
+        if not verify_linear_signature(linear_signature, body):
+            raise HTTPException(status_code=401, detail="签名验证失败")
+        
+        # 解析 JSON 载荷
+        payload_data = json.loads(body.decode('utf-8'))
+        payload = LinearWebhookPayload(**payload_data)
+        
         # 提取 HTTP 头部信息
         linear_delivery = request.headers.get("Linear-Delivery")
         linear_event = request.headers.get("Linear-Event")
-        linear_signature = request.headers.get("Linear-Signature")
         
         # 提取基本信息
         entity_type = payload.type
@@ -117,4 +147,7 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "signature_verification": os.getenv("LINEAR_WEBHOOK_SECRET") is not None
+    }
