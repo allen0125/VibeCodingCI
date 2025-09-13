@@ -5,11 +5,16 @@ import json
 import hmac
 import hashlib
 import os
+import logging
 
 from database import get_session, create_db_and_tables
 from models import LinearWebhookPayload, WebhookEvent
 
 app = FastAPI(title="Linear Webhook Handler", version="2.0.0")
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # 创建数据库表
 create_db_and_tables()
@@ -18,9 +23,11 @@ def verify_linear_signature(signature: str, body: bytes) -> bool:
     """验证 Linear webhook 签名"""
     secret = os.getenv("LINEAR_WEBHOOK_SECRET")
     if not secret:
+        logger.warning("未配置 LINEAR_WEBHOOK_SECRET，跳过签名验证")
         return True  # 如果没有配置密钥，跳过验证
     
     if not signature or not signature.startswith("sha256="):
+        logger.error(f"无效的签名格式: {signature}")
         return False
     
     expected = hmac.new(
@@ -29,7 +36,15 @@ def verify_linear_signature(signature: str, body: bytes) -> bool:
         hashlib.sha256
     ).hexdigest()
     
-    return hmac.compare_digest(signature[7:], expected)
+    received = signature[7:]
+    is_valid = hmac.compare_digest(received, expected)
+    
+    if not is_valid:
+        logger.error(f"签名不匹配 - 期望: {expected[:16]}..., 收到: {received[:16]}...")
+    else:
+        logger.info("签名验证成功")
+    
+    return is_valid
 
 @app.post("/webhook/linear")
 async def handle_linear_webhook(
@@ -38,17 +53,36 @@ async def handle_linear_webhook(
 ):
     """处理 Linear webhook 请求 - 2025 最新结构"""
     try:
+        logger.info("收到 Linear webhook 请求")
+        
         # 获取原始请求体进行签名验证
         body = await request.body()
+        logger.info(f"请求体大小: {len(body)} 字节")
+        
         linear_signature = request.headers.get("Linear-Signature")
+        logger.info(f"Linear-Signature: {linear_signature}")
         
         # 验证签名
         if not verify_linear_signature(linear_signature, body):
+            logger.error("签名验证失败")
             raise HTTPException(status_code=401, detail="签名验证失败")
         
+        logger.info("签名验证通过")
+        
         # 解析 JSON 载荷
-        payload_data = json.loads(body.decode('utf-8'))
-        payload = LinearWebhookPayload(**payload_data)
+        try:
+            payload_data = json.loads(body.decode('utf-8'))
+            logger.info(f"JSON 解析成功，载荷键: {list(payload_data.keys())}")
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON 解析失败: {e}")
+            raise HTTPException(status_code=400, detail=f"无效的 JSON 载荷: {str(e)}")
+        
+        try:
+            payload = LinearWebhookPayload(**payload_data)
+            logger.info(f"载荷验证成功: {payload.action} - {payload.type}")
+        except Exception as e:
+            logger.error(f"载荷验证失败: {e}")
+            raise HTTPException(status_code=400, detail=f"载荷格式错误: {str(e)}")
         
         # 提取 HTTP 头部信息
         linear_delivery = request.headers.get("Linear-Delivery")
@@ -82,6 +116,7 @@ async def handle_linear_webhook(
         session.commit()
         session.refresh(webhook_event)
         
+        logger.info(f"Webhook 事件处理成功: {action} - {entity_type} - {entity_id}")
         return {
             "status": "success",
             "message": f"Webhook event {action} for {entity_type} processed",
@@ -89,7 +124,11 @@ async def handle_linear_webhook(
             "linear_delivery": linear_delivery
         }
         
+    except HTTPException as e:
+        logger.error(f"HTTP 异常: {e.status_code} - {e.detail}")
+        raise e
     except Exception as e:
+        logger.error(f"处理 webhook 时发生未知错误: {str(e)}", exc_info=True)
         session.rollback()
         raise HTTPException(status_code=500, detail=f"处理 webhook 时出错: {str(e)}")
 
