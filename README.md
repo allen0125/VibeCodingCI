@@ -155,3 +155,25 @@ nano .env
 - 数据库文件：`./data/`
 - Aider 配置：`./aider_config/`
 - 日志文件：容器内 `/app/logs/`
+
+## 🚀 CI/CD
+
+项目配置了 GitHub Actions 自动构建和发布：
+
+### 自动化流程
+- **代码推送** → 自动构建 Docker 镜像
+- **创建标签** → 发布到 GitHub Package Registry
+- **Pull Request** → 自动测试 Docker 镜像
+
+### 使用发布的镜像
+```bash
+# 拉取最新镜像
+docker pull ghcr.io/your-username/linear-webhook-handler:latest
+
+# 运行容器
+docker run -d \
+  --name linear-webhook \
+  -p 8000:8000 \
+  -e OPENAI_API_KEY=your_deepseek_api_key \
+  ghcr.io/your-username/linear-webhook-handler:latest
+```
