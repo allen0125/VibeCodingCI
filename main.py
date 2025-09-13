@@ -8,6 +8,7 @@ import os
 import logging
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -81,14 +82,128 @@ def format_reaction_for_aider(action: str, data: dict) -> str:
     
     return prompt
 
-def call_aider_with_linear_event(formatted_prompt: str, woodenman_path: str) -> dict:
-    """调用 aider 处理 Linear 事件"""
+def create_branch_and_pr(woodenman_path: str, branch_name: str, pr_title: str, pr_body: str) -> dict:
+    """创建新分支并推送，然后创建 PR"""
+    try:
+        logger.info(f"创建分支 {branch_name} 并推送")
+        
+        # 切换到 WoodenMan 目录
+        original_cwd = os.getcwd()
+        os.chdir(woodenman_path)
+        
+        try:
+            # 1. 确保在 main 分支并拉取最新代码
+            subprocess.run(["git", "checkout", "main"], check=True, capture_output=True, text=True)
+            subprocess.run(["git", "pull", "origin", "main"], check=True, capture_output=True, text=True)
+            
+            # 2. 创建新分支
+            subprocess.run(["git", "checkout", "-b", branch_name], check=True, capture_output=True, text=True)
+            logger.info(f"创建分支 {branch_name} 成功")
+            
+            # 3. 推送新分支到远程
+            subprocess.run(["git", "push", "-u", "origin", branch_name], check=True, capture_output=True, text=True)
+            logger.info(f"推送分支 {branch_name} 成功")
+            
+            # 4. 创建 PR (使用 GitHub CLI)
+            pr_cmd = [
+                "gh", "pr", "create",
+                "--title", pr_title,
+                "--body", pr_body,
+                "--head", branch_name,
+                "--base", "main",
+                "--label", "linear-integration,auto-generated"  # 添加标签
+            ]
+            
+            pr_result = subprocess.run(pr_cmd, capture_output=True, text=True, timeout=60)
+            
+            if pr_result.returncode == 0:
+                pr_url = pr_result.stdout.strip()
+                logger.info(f"创建 PR 成功: {pr_url}")
+                return {
+                    "success": True,
+                    "branch_name": branch_name,
+                    "pr_url": pr_url,
+                    "pr_output": pr_result.stdout
+                }
+            else:
+                logger.error(f"创建 PR 失败: {pr_result.stderr}")
+                return {
+                    "success": False,
+                    "error": f"创建 PR 失败: {pr_result.stderr}",
+                    "branch_name": branch_name
+                }
+                
+        finally:
+            os.chdir(original_cwd)
+            
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Git 操作失败: {e}")
+        return {
+            "success": False,
+            "error": f"Git 操作失败: {e}",
+            "returncode": e.returncode
+        }
+    except Exception as e:
+        logger.error(f"创建分支和 PR 时出错: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+def call_aider_with_linear_event(formatted_prompt: str, woodenman_path: str, linear_event_info: dict) -> dict:
+    """调用 aider 处理 Linear 事件，创建分支和 PR"""
     try:
         logger.info(f"调用 aider 处理 Linear 事件，目标路径: {woodenman_path}")
         
         # 确保 WoodenMan 路径存在
         if not os.path.exists(woodenman_path):
             raise Exception(f"WoodenMan 路径不存在: {woodenman_path}")
+        
+        # 生成分支名和 PR 信息
+        entity_id = linear_event_info.get('entity_id', str(uuid.uuid4())[:8])
+        action = linear_event_info.get('action', 'update')
+        title = linear_event_info.get('title', 'Event')
+        entity_type = linear_event_info.get('entity_type', 'Unknown')
+        
+        branch_name = f"linear-{action}-{entity_id[:8]}"
+        pr_title = f"[{linear_identifier}] Linear {action.upper()}: {title}"
+        
+        # 构建 Linear Issue 链接和引用
+        linear_url = linear_event_info.get('linear_url', '')
+        linear_identifier = linear_event_info.get('linear_identifier', '')
+        
+        # 创建 PR 描述，包含 Linear Issue 关联
+        pr_body = f"""## 🔗 Linear Issue 关联
+
+**Linear Issue**: [{linear_identifier}]({linear_url})
+**Linear URL**: {linear_url}
+**事件类型**: {entity_type} {action.upper()}
+**实体 ID**: {entity_id}
+
+## 📝 事件详情
+
+**标题**: {title}
+**处理时间**: {linear_event_info.get('created_at', 'Unknown')}
+
+## 🤖 AI 处理结果
+
+{formatted_prompt}
+
+## 📋 变更说明
+
+此 PR 由 Linear Webhook Handler 根据 Linear Issue 变更自动创建。
+
+**关联的 Linear Issue**: [{linear_identifier}]({linear_url})
+**Linear 链接**: {linear_url}
+
+### 🔗 相关链接
+- [Linear Issue: {linear_identifier}]({linear_url})
+- [Linear 工作区](https://linear.app)
+
+---
+*🤖 此 PR 由 Linear Webhook Handler 自动创建并关联到 Linear Issue*
+*📋 标签: `linear-integration`, `auto-generated`*
+"""
         
         # 创建临时文件存储 prompt
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
@@ -119,19 +234,28 @@ def call_aider_with_linear_event(formatted_prompt: str, woodenman_path: str) -> 
                 timeout=300  # 5分钟超时
             )
             
-            if result.returncode == 0:
-                logger.info("aider 执行成功")
+            aider_success = result.returncode == 0
+            
+            if aider_success:
+                logger.info("aider 执行成功，开始创建分支和 PR")
+                
+                # 创建分支和 PR
+                pr_result = create_branch_and_pr(woodenman_path, branch_name, pr_title, pr_body)
+                
                 return {
                     "success": True,
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
-                    "returncode": result.returncode
+                    "aider_success": True,
+                    "aider_stdout": result.stdout,
+                    "aider_stderr": result.stderr,
+                    "branch_name": branch_name,
+                    "pr_result": pr_result
                 }
             else:
                 logger.error(f"aider 执行失败，返回码: {result.returncode}")
                 logger.error(f"错误输出: {result.stderr}")
                 return {
                     "success": False,
+                    "aider_success": False,
                     "stdout": result.stdout,
                     "stderr": result.stderr,
                     "returncode": result.returncode
@@ -278,11 +402,24 @@ async def handle_linear_webhook(
             # 获取 WoodenMan 路径
             woodenman_path = os.path.join(os.path.dirname(__file__), "WoodenMan")
             
-            # 调用 aider
-            aider_result = call_aider_with_linear_event(formatted_prompt, woodenman_path)
+            # 准备 Linear 事件信息
+            linear_event_info = {
+                "action": action,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "title": data.get("title", ""),
+                "linear_url": data.get("url", ""),
+                "linear_identifier": data.get("identifier", ""),
+                "created_at": webhook_event.created_at.isoformat() if webhook_event.created_at else None
+            }
             
-            if aider_result["success"]:
+            # 调用 aider
+            aider_result = call_aider_with_linear_event(formatted_prompt, woodenman_path, linear_event_info)
+            
+            if aider_result.get("success"):
                 logger.info("aider 处理成功")
+                if aider_result.get("pr_result", {}).get("success"):
+                    logger.info(f"PR 创建成功: {aider_result['pr_result'].get('pr_url', 'Unknown')}")
             else:
                 logger.error(f"aider 处理失败: {aider_result.get('error', 'Unknown error')}")
                 
