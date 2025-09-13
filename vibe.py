@@ -95,10 +95,13 @@ class Vibe:
             aider_api_base = os.getenv("AIDER_OPENAI_API_BASE")
             aider_model = os.getenv("AIDER_OPENAI_MODEL")
             
+            # 设置 DeepSeek API 配置
             if aider_api_key:
-                env["OPENAI_API_KEY"] = aider_api_key
+                env["DEEPSEEK_API_KEY"] = aider_api_key
+                env["OPENAI_API_KEY"] = aider_api_key  # 兼容性设置
             if aider_api_base:
-                env["OPENAI_API_BASE"] = aider_api_base
+                env["DEEPSEEK_API_BASE"] = aider_api_base
+                env["OPENAI_API_BASE"] = aider_api_base  # 兼容性设置
             if aider_model:
                 # 使用正确的 deepseek 模型名称
                 if "deepseek" in aider_model.lower():
@@ -290,10 +293,13 @@ class Vibe:
             aider_api_base = os.getenv("AIDER_OPENAI_API_BASE")
             aider_model = os.getenv("AIDER_OPENAI_MODEL")
             
+            # 设置 DeepSeek API 配置
             if aider_api_key:
-                env["OPENAI_API_KEY"] = aider_api_key
+                env["DEEPSEEK_API_KEY"] = aider_api_key
+                env["OPENAI_API_KEY"] = aider_api_key  # 兼容性设置
             if aider_api_base:
-                env["OPENAI_API_BASE"] = aider_api_base
+                env["DEEPSEEK_API_BASE"] = aider_api_base
+                env["OPENAI_API_BASE"] = aider_api_base  # 兼容性设置
             if aider_model:
                 # 使用正确的 deepseek 模型名称
                 if "deepseek" in aider_model.lower():
