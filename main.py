@@ -6,6 +6,9 @@ import hmac
 import hashlib
 import os
 import logging
+import subprocess
+import tempfile
+from pathlib import Path
 from dotenv import load_dotenv
 
 from database import get_session, create_db_and_tables
@@ -77,6 +80,82 @@ def format_reaction_for_aider(action: str, data: dict) -> str:
     prompt += f"Comment: {comment.get('body', '')[:100]}{'...' if len(comment.get('body', '')) > 100 else ''}\n"
     
     return prompt
+
+def call_aider_with_linear_event(formatted_prompt: str, woodenman_path: str) -> dict:
+    """调用 aider 处理 Linear 事件"""
+    try:
+        logger.info(f"调用 aider 处理 Linear 事件，目标路径: {woodenman_path}")
+        
+        # 确保 WoodenMan 路径存在
+        if not os.path.exists(woodenman_path):
+            raise Exception(f"WoodenMan 路径不存在: {woodenman_path}")
+        
+        # 创建临时文件存储 prompt
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            f.write(formatted_prompt)
+            temp_file = f.name
+        
+        try:
+            # 构建 aider 命令
+            aider_cmd = [
+                "aider",
+                "--yes",  # 自动确认
+                "--auto-commits",  # 自动提交
+                "--model", os.getenv("AIDER_OPENAI_MODEL", "deepseek-chat"),
+                "--api-key", os.getenv("AIDER_OPENAI_API_KEY", ""),
+                "--api-base", os.getenv("AIDER_OPENAI_API_BASE", "https://api.deepseek.com/v1"),
+                "--input", temp_file,
+                woodenman_path
+            ]
+            
+            logger.info(f"执行 aider 命令: {' '.join(aider_cmd[:6])}...")
+            
+            # 执行 aider 命令
+            result = subprocess.run(
+                aider_cmd,
+                cwd=os.path.dirname(woodenman_path),
+                capture_output=True,
+                text=True,
+                timeout=300  # 5分钟超时
+            )
+            
+            if result.returncode == 0:
+                logger.info("aider 执行成功")
+                return {
+                    "success": True,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "returncode": result.returncode
+                }
+            else:
+                logger.error(f"aider 执行失败，返回码: {result.returncode}")
+                logger.error(f"错误输出: {result.stderr}")
+                return {
+                    "success": False,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "returncode": result.returncode
+                }
+                
+        finally:
+            # 清理临时文件
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+                
+    except subprocess.TimeoutExpired:
+        logger.error("aider 执行超时")
+        return {
+            "success": False,
+            "error": "aider 执行超时",
+            "returncode": -1
+        }
+    except Exception as e:
+        logger.error(f"调用 aider 时出错: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "returncode": -1
+        }
 
 app = FastAPI(title="Linear Webhook Handler", version="2.0.0")
 
@@ -185,11 +264,38 @@ async def handle_linear_webhook(
         session.refresh(webhook_event)
         
         logger.info(f"Webhook 事件处理成功: {action} - {entity_type} - {entity_id}")
+        
+        # 调用 aider 处理 Linear 事件
+        aider_result = None
+        try:
+            # 格式化事件为 aider prompt
+            formatted_prompt = format_linear_event_for_aider({
+                "action": action,
+                "entity_type": entity_type,
+                "data": data
+            })
+            
+            # 获取 WoodenMan 路径
+            woodenman_path = os.path.join(os.path.dirname(__file__), "WoodenMan")
+            
+            # 调用 aider
+            aider_result = call_aider_with_linear_event(formatted_prompt, woodenman_path)
+            
+            if aider_result["success"]:
+                logger.info("aider 处理成功")
+            else:
+                logger.error(f"aider 处理失败: {aider_result.get('error', 'Unknown error')}")
+                
+        except Exception as e:
+            logger.error(f"调用 aider 时出错: {str(e)}")
+            aider_result = {"success": False, "error": str(e)}
+        
         return {
             "status": "success",
             "message": f"Webhook event {action} for {entity_type} processed",
             "event_id": webhook_event.id,
-            "linear_delivery": linear_delivery
+            "linear_delivery": linear_delivery,
+            "aider_result": aider_result
         }
         
     except HTTPException as e:
