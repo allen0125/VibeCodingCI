@@ -100,7 +100,11 @@ class Vibe:
             if aider_api_base:
                 env["OPENAI_API_BASE"] = aider_api_base
             if aider_model:
-                env["AIDER_MODEL"] = aider_model
+                # 使用正确的 deepseek 模型名称
+                if "deepseek" in aider_model.lower():
+                    env["AIDER_MODEL"] = "deepseek/deepseek-chat"
+                else:
+                    env["AIDER_MODEL"] = aider_model
             
             logger.info(f"执行命令: {' '.join(cmd)}")
             logger.info(f"工作目录: {self.project_path}")
@@ -291,7 +295,11 @@ class Vibe:
             if aider_api_base:
                 env["OPENAI_API_BASE"] = aider_api_base
             if aider_model:
-                env["AIDER_MODEL"] = aider_model
+                # 使用正确的 deepseek 模型名称
+                if "deepseek" in aider_model.lower():
+                    env["AIDER_MODEL"] = "deepseek/deepseek-chat"
+                else:
+                    env["AIDER_MODEL"] = aider_model
             
             logger.info(f"启动交互模式，命令: {' '.join(cmd)}")
             logger.info(f"工作目录: {self.project_path}")
