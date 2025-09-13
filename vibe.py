@@ -109,12 +109,20 @@ class Vibe:
             # 执行 Aider
             logger.info("🚀 开始执行 aider...")
             
-            # 使用 Popen 来实时获取输出
+            # 使用 Popen 来实时获取输出，并添加参数来避免交互式提示
+            cmd.extend([
+                "--no-show-model-warnings",
+                "--yes",  # 自动确认所有提示
+                "--no-check-update",  # 不检查更新
+                "--no-analytics"  # 禁用分析
+            ])
+            
             process = subprocess.Popen(
                 cmd,
                 cwd=self.project_path,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                stdin=subprocess.PIPE,  # 添加 stdin 来处理交互式输入
                 text=True,
                 env=env,
                 bufsize=1,
@@ -124,14 +132,29 @@ class Vibe:
             stdout_lines = []
             stderr_lines = []
             
-            # 实时读取输出
+            # 实时读取输出并处理交互式提示
             while True:
                 output = process.stdout.readline()
                 if output == '' and process.poll() is not None:
                     break
                 if output:
-                    logger.info(f"📤 aider: {output.strip()}")
+                    output_line = output.strip()
+                    logger.info(f"📤 aider: {output_line}")
                     stdout_lines.append(output)
+                    
+                    # 处理交互式提示
+                    if "Open documentation url for more info?" in output_line:
+                        logger.info("🤖 自动回答 'No' 以避免交互式提示")
+                        process.stdin.write("N\n")
+                        process.stdin.flush()
+                    elif "Don't ask again" in output_line:
+                        logger.info("🤖 自动回答 'D' 以不再询问")
+                        process.stdin.write("D\n")
+                        process.stdin.flush()
+                    elif "Yes" in output_line and "No" in output_line and "Don't ask again" in output_line:
+                        logger.info("🤖 自动回答 'N' 以跳过文档链接")
+                        process.stdin.write("N\n")
+                        process.stdin.flush()
             
             # 读取剩余输出
             remaining_stdout, remaining_stderr = process.communicate()
@@ -245,6 +268,14 @@ class Vibe:
                 cmd.extend(python_files)
             
             cmd.extend(["--message", requirements])
+            
+            # 添加参数来避免交互式提示
+            cmd.extend([
+                "--no-show-model-warnings",
+                "--yes",  # 自动确认所有提示
+                "--no-check-update",  # 不检查更新
+                "--no-analytics"  # 禁用分析
+            ])
             
             # 设置环境变量
             env = os.environ.copy()
