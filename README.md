@@ -177,3 +177,68 @@ docker run -d \
   -e OPENAI_API_KEY=your_deepseek_api_key \
   ghcr.io/your-username/linear-webhook-handler:latest
 ```
+
+## 🖥️ 服务器部署
+
+### 快速部署 (推荐)
+
+1. **下载部署文件**:
+```bash
+# 创建项目目录
+mkdir linear-webhook-handler && cd linear-webhook-handler
+
+# 下载必要文件
+wget https://raw.githubusercontent.com/your-username/linear-webhook-handler/main/docker-compose.prod.yml
+wget https://raw.githubusercontent.com/your-username/linear-webhook-handler/main/deploy-server.sh
+wget https://raw.githubusercontent.com/your-username/linear-webhook-handler/main/env.example
+
+# 设置执行权限
+chmod +x deploy-server.sh
+```
+
+2. **配置环境变量**:
+```bash
+cp env.example .env
+nano .env  # 编辑配置文件，填入您的 DeepSeek API Key
+```
+
+3. **一键部署**:
+```bash
+./deploy-server.sh
+```
+
+### 手动部署
+
+```bash
+# 1. 创建必要目录
+mkdir -p data logs
+
+# 2. 配置环境变量
+cp env.example .env
+# 编辑 .env 文件
+
+# 3. 启动服务
+docker-compose -f docker-compose.prod.yml up -d
+
+# 4. 检查状态
+docker-compose -f docker-compose.prod.yml ps
+```
+
+### 管理命令
+
+```bash
+# 查看日志
+docker-compose -f docker-compose.prod.yml logs -f
+
+# 停止服务
+docker-compose -f docker-compose.prod.yml down
+
+# 重启服务
+docker-compose -f docker-compose.prod.yml restart
+
+# 更新服务
+docker-compose -f docker-compose.prod.yml pull
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+详细部署指南请参考 [server-deploy.md](server-deploy.md)
