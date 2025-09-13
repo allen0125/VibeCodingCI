@@ -6,9 +6,13 @@ import hmac
 import hashlib
 import os
 import logging
+from dotenv import load_dotenv
 
 from database import get_session, create_db_and_tables
 from models import LinearWebhookPayload, WebhookEvent
+
+# 优先加载 .env 文件中的环境变量
+load_dotenv()
 
 app = FastAPI(title="Linear Webhook Handler", version="2.0.0")
 

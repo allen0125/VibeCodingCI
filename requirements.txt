@@ -3,3 +3,4 @@ uvicorn[standard]==0.32.1
 sqlmodel==0.0.22
 python-multipart==0.0.12
 aider-chat==0.86.0
+python-dotenv==1.0.0

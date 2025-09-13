@@ -1,8 +1,17 @@
 import uvicorn
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 if __name__ == "__main__":
+    # 优先加载 .env 文件中的环境变量
+    env_path = Path(__file__).parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+        print(f"✅ 已加载环境变量文件: {env_path}")
+    else:
+        print(f"⚠️  未找到 .env 文件: {env_path}")
+        print("💡 建议创建 .env 文件来配置环境变量")
     # 获取项目根目录
     project_root = Path(__file__).parent
     
