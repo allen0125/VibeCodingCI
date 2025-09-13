@@ -93,7 +93,7 @@ def format_reaction_for_aider(action: str, data: dict) -> str:
     
     return prompt
 
-def create_branch_and_pr(woodenman_path: str, branch_name: str, pr_title: str, pr_body: str) -> dict:
+def create_branch_and_pr(woodenman_path: str, branch_name: str, pr_title: str, pr_body: str, formatted_prompt: str) -> dict:
     """创建新分支并推送，然后创建 PR"""
     try:
         logger.info(f"🌿 开始创建分支 {branch_name} 并推送")
@@ -118,12 +118,63 @@ def create_branch_and_pr(woodenman_path: str, branch_name: str, pr_title: str, p
             subprocess.run(["git", "checkout", "-b", branch_name], check=True, capture_output=True, text=True)
             logger.info(f"✅ 创建分支 {branch_name} 成功")
             
-            # 3. 推送新分支到远程
+            # 3. 调用 aider 处理 Linear 事件
+            logger.info("🤖 开始调用 aider 处理 Linear 事件...")
+            try:
+                vibe = Vibe(woodenman_path)
+                logger.info(f"📝 格式化后的 prompt:\n{formatted_prompt}")
+                
+                # 调用 vibe.code 方法
+                logger.info("🔄 开始调用 vibe.code()...")
+                aider_result = vibe.code(formatted_prompt)
+                
+                aider_success = aider_result.get("success", False)
+                logger.info(f"🎯 aider 执行结果: {'成功' if aider_success else '失败'}")
+                
+                if not aider_success:
+                    logger.error(f"aider 执行失败，返回码: {aider_result.get('returncode', -1)}")
+                    logger.error(f"错误输出: {aider_result.get('stderr', 'Unknown error')}")
+                    return {
+                        "success": False,
+                        "error": f"aider 执行失败: {aider_result.get('stderr', 'Unknown error')}",
+                        "branch_name": branch_name
+                    }
+                
+                logger.info("✅ aider 执行成功")
+                
+            except Exception as vibe_error:
+                logger.error(f"Vibe 调用失败: {str(vibe_error)}")
+                return {
+                    "success": False,
+                    "error": f"Vibe 调用失败: {str(vibe_error)}",
+                    "branch_name": branch_name
+                }
+            
+            # 4. 检查是否有文件更改并提交
+            logger.info("🔍 检查文件更改...")
+            status_result = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
+            
+            if status_result.returncode == 0 and status_result.stdout.strip():
+                logger.info("📝 发现文件更改，准备提交...")
+                logger.info(f"更改的文件:\n{status_result.stdout}")
+                
+                # 添加所有更改
+                subprocess.run(["git", "add", "."], check=True, capture_output=True, text=True)
+                logger.info("✅ 文件已添加到暂存区")
+                
+                # 提交更改
+                commit_message = f"Linear 事件处理: {pr_title}"
+                subprocess.run(["git", "commit", "-m", commit_message], check=True, capture_output=True, text=True)
+                logger.info(f"✅ 提交成功: {commit_message}")
+            else:
+                logger.warning("⚠️  没有发现文件更改，将创建空 PR")
+            
+            # 5. 推送新分支到远程
             logger.info(f"⬆️  推送分支 {branch_name} 到远程...")
             subprocess.run(["git", "push", "-u", "origin", branch_name], check=True, capture_output=True, text=True)
             logger.info(f"✅ 推送分支 {branch_name} 成功")
             
-            # 4. 创建 PR (使用 GitHub CLI)
+            # 6. 创建 PR (使用 GitHub CLI)
             logger.info("📋 开始创建 Pull Request...")
             pr_cmd = [
                 "gh", "pr", "create",
@@ -228,57 +279,37 @@ def call_aider_with_linear_event(formatted_prompt: str, woodenman_path: str, lin
 *📋 自动生成*
 """
         
-        # 使用 Vibe 类调用 aider
+        # 直接创建分支和 PR，aider 调用将在 create_branch_and_pr 中进行
         try:
-            vibe = Vibe(woodenman_path)
-            logger.info("使用 Vibe 类调用 aider")
-            logger.info(f"📝 格式化后的 prompt:\n{formatted_prompt}")
+            logger.info("🔄 开始创建分支和 PR...")
+            logger.info(f"🌿 分支名: {branch_name}")
+            logger.info(f"📋 PR 标题: {pr_title}")
             
-            # 调用 vibe.code 方法
-            logger.info("🔄 开始调用 vibe.code()...")
-            aider_result = vibe.code(formatted_prompt)
+            # 创建分支和 PR，aider 调用包含在其中
+            pr_result = create_branch_and_pr(woodenman_path, branch_name, pr_title, pr_body, formatted_prompt)
             
-            aider_success = aider_result.get("success", False)
-            logger.info(f"🎯 aider 执行结果: {'成功' if aider_success else '失败'}")
-            
-            if aider_success:
-                logger.info("✅ aider 执行成功，开始创建分支和 PR")
-                logger.info(f"🌿 分支名: {branch_name}")
-                logger.info(f"📋 PR 标题: {pr_title}")
-                
-                # 创建分支和 PR
-                logger.info("🔄 开始创建分支和 PR...")
-                pr_result = create_branch_and_pr(woodenman_path, branch_name, pr_title, pr_body)
-                
-                if pr_result.get("success"):
-                    logger.info(f"🎉 PR 创建成功: {pr_result.get('pr_url', 'Unknown')}")
-                else:
-                    logger.error(f"❌ PR 创建失败: {pr_result.get('error', 'Unknown error')}")
-                
+            if pr_result.get("success"):
+                logger.info(f"🎉 PR 创建成功: {pr_result.get('pr_url', 'Unknown')}")
                 return {
                     "success": True,
                     "aider_success": True,
-                    "aider_stdout": aider_result.get("stdout", ""),
-                    "aider_stderr": aider_result.get("stderr", ""),
                     "branch_name": branch_name,
                     "pr_result": pr_result
                 }
             else:
-                logger.error(f"aider 执行失败，返回码: {aider_result.get('returncode', -1)}")
-                logger.error(f"错误输出: {aider_result.get('stderr', 'Unknown error')}")
+                logger.error(f"❌ PR 创建失败: {pr_result.get('error', 'Unknown error')}")
                 return {
                     "success": False,
                     "aider_success": False,
-                    "stdout": aider_result.get("stdout", ""),
-                    "stderr": aider_result.get("stderr", ""),
-                    "returncode": aider_result.get("returncode", -1)
+                    "error": pr_result.get("error", "Unknown error"),
+                    "branch_name": branch_name
                 }
                 
-        except Exception as vibe_error:
-            logger.error(f"Vibe 调用失败: {str(vibe_error)}")
+        except Exception as e:
+            logger.error(f"创建分支和 PR 时出错: {str(e)}")
             return {
                 "success": False,
-                "error": f"Vibe 调用失败: {str(vibe_error)}",
+                "error": str(e),
                 "returncode": -1
             }
                 
