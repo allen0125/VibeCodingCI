@@ -68,6 +68,16 @@ def format_comment_for_aider(action: str, data: dict) -> str:
     prompt += f"Issue: {issue.get('identifier', 'Unknown')} - {issue.get('title', '')}\n"
     prompt += f"Comment:\n{body}\n"
     
+    # 添加 Issue 的更多上下文信息
+    if issue:
+        prompt += f"\nIssue Context:\n"
+        prompt += f"- Issue ID: {issue.get('id', 'Unknown')}\n"
+        prompt += f"- Issue URL: {issue.get('url', 'Unknown')}\n"
+        if issue.get('state'):
+            prompt += f"- Issue State: {issue['state'].get('name', 'Unknown')}\n"
+        if issue.get('team'):
+            prompt += f"- Team: {issue['team'].get('name', 'Unknown')} ({issue['team'].get('key', '')})\n"
+    
     return prompt
 
 def format_reaction_for_aider(action: str, data: dict) -> str:
@@ -165,12 +175,12 @@ def call_aider_with_linear_event(formatted_prompt: str, woodenman_path: str, lin
         title = linear_event_info.get('title', 'Event')
         entity_type = linear_event_info.get('entity_type', 'Unknown')
         
-        branch_name = f"linear-{action}-{entity_id[:8]}"
-        pr_title = f"[{linear_identifier}] Linear {action.upper()}: {title}"
-        
         # 构建 Linear Issue 链接和引用
         linear_url = linear_event_info.get('linear_url', '')
         linear_identifier = linear_event_info.get('linear_identifier', '')
+        
+        branch_name = f"linear-{action}-{entity_id[:8]}"
+        pr_title = f"[{linear_identifier}] Linear {action.upper()}: {title}"
         
         # 创建 PR 描述，包含 Linear Issue 关联
         pr_body = f"""## 🔗 Linear Issue 关联
@@ -403,13 +413,20 @@ async def handle_linear_webhook(
             woodenman_path = os.path.join(os.path.dirname(__file__), "WoodenMan")
             
             # 准备 Linear 事件信息
+            # 对于 Comment 事件，尝试从关联的 Issue 获取标识符
+            linear_identifier = data.get("identifier", "")
+            if not linear_identifier and entity_type == "Comment":
+                # 对于 Comment，尝试从关联的 Issue 获取标识符
+                issue_data = data.get("issue", {})
+                linear_identifier = issue_data.get("identifier", f"COMMENT-{entity_id[:8]}")
+            
             linear_event_info = {
                 "action": action,
                 "entity_type": entity_type,
                 "entity_id": entity_id,
                 "title": data.get("title", ""),
                 "linear_url": data.get("url", ""),
-                "linear_identifier": data.get("identifier", ""),
+                "linear_identifier": linear_identifier,
                 "created_at": webhook_event.created_at.isoformat() if webhook_event.created_at else None
             }
             
