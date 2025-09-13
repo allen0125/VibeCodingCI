@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  linear-webhook:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # 数据库配置
+      - DATABASE_URL=sqlite:///./linear_webhook.db
+      
+      # 服务器配置
+      - HOST=0.0.0.0
+      - PORT=8000
+      - RELOAD=false
+      - LOG_LEVEL=info
+      
+      # Aider 配置 - DeepSeek
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_BASE=https://api.deepseek.com/v1
+      - OPENAI_MODEL=deepseek-chat
+      - AIDER_OPENAI_API_BASE=https://api.deepseek.com/v1
+      - AIDER_OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AIDER_OPENAI_MODEL=deepseek-chat
+      
+      # Aider 其他配置
+      - AIDER_WORK_DIR=/app
+      - AIDER_EDITOR=code
+      - AIDER_AUTO_COMMITS=true
+      - AIDER_DARK_MODE=false
+      - AIDER_YES=false
+      - AIDER_SAFE_MODE=true
+      
+      # 可选：其他 AI 模型配置
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - COHERE_API_KEY=${COHERE_API_KEY}
+      
+    volumes:
+      # 持久化数据库
+      - ./data:/app/data
+      # 持久化 Aider 配置
+      - ./aider_config:/app/.aider
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # 可选：添加 PostgreSQL 数据库
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=linear_webhook
+      - POSTGRES_USER=linear_user
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-linear_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    profiles:
+      - postgres
+
+volumes:
+  postgres_data:
