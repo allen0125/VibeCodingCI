@@ -104,21 +104,39 @@ def create_branch_and_pr(woodenman_path: str, branch_name: str, pr_title: str, p
         os.chdir(woodenman_path)
         
         try:
-            # 1. 确保在 main 分支并拉取最新代码
+            # 1. 确保 WoodenMan 目录有自己的 git 仓库
+            logger.info("🔍 检查 WoodenMan 目录的 git 仓库...")
+            git_dir = os.path.join(woodenman_path, ".git")
+            
+            if not os.path.exists(git_dir):
+                logger.info("📁 WoodenMan 目录没有 git 仓库，正在初始化...")
+                
+                # 初始化 git 仓库
+                subprocess.run(["git", "init"], cwd=woodenman_path, check=True, capture_output=True, text=True)
+                logger.info("✅ Git 仓库初始化完成")
+                
+                # 设置用户信息
+                subprocess.run(["git", "config", "user.name", "Linear Webhook Handler"], cwd=woodenman_path, check=True, capture_output=True, text=True)
+                subprocess.run(["git", "config", "user.email", "webhook@linear.app"], cwd=woodenman_path, check=True, capture_output=True, text=True)
+                
+                # 添加现有文件并创建初始提交
+                subprocess.run(["git", "add", "."], cwd=woodenman_path, check=True, capture_output=True, text=True)
+                subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=woodenman_path, check=True, capture_output=True, text=True)
+                logger.info("✅ 初始提交创建完成")
+            else:
+                logger.info("✅ WoodenMan 目录已有 git 仓库")
+            
+            # 2. 确保在 main 分支
             logger.info("🔄 切换到 main 分支...")
-            subprocess.run(["git", "checkout", "main"], check=True, capture_output=True, text=True)
+            subprocess.run(["git", "checkout", "main"], cwd=woodenman_path, check=True, capture_output=True, text=True)
             logger.info("✅ 已切换到 main 分支")
             
-            logger.info("⬇️  拉取最新代码...")
-            subprocess.run(["git", "pull", "origin", "main"], check=True, capture_output=True, text=True)
-            logger.info("✅ 代码拉取完成")
-            
-            # 2. 创建新分支
+            # 3. 创建新分支
             logger.info(f"🌿 创建新分支 {branch_name}...")
-            subprocess.run(["git", "checkout", "-b", branch_name], check=True, capture_output=True, text=True)
+            subprocess.run(["git", "checkout", "-b", branch_name], cwd=woodenman_path, check=True, capture_output=True, text=True)
             logger.info(f"✅ 创建分支 {branch_name} 成功")
             
-            # 3. 调用 aider 处理 Linear 事件
+            # 4. 调用 aider 处理 Linear 事件
             logger.info("🤖 开始调用 aider 处理 Linear 事件...")
             try:
                 vibe = Vibe(woodenman_path)
@@ -150,31 +168,31 @@ def create_branch_and_pr(woodenman_path: str, branch_name: str, pr_title: str, p
                     "branch_name": branch_name
                 }
             
-            # 4. 检查是否有文件更改并提交
+            # 5. 检查是否有文件更改并提交
             logger.info("🔍 检查文件更改...")
-            status_result = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
+            status_result = subprocess.run(["git", "status", "--porcelain"], cwd=woodenman_path, capture_output=True, text=True)
             
             if status_result.returncode == 0 and status_result.stdout.strip():
                 logger.info("📝 发现文件更改，准备提交...")
                 logger.info(f"更改的文件:\n{status_result.stdout}")
                 
                 # 添加所有更改
-                subprocess.run(["git", "add", "."], check=True, capture_output=True, text=True)
+                subprocess.run(["git", "add", "."], cwd=woodenman_path, check=True, capture_output=True, text=True)
                 logger.info("✅ 文件已添加到暂存区")
                 
                 # 提交更改
                 commit_message = f"Linear 事件处理: {pr_title}"
-                subprocess.run(["git", "commit", "-m", commit_message], check=True, capture_output=True, text=True)
+                subprocess.run(["git", "commit", "-m", commit_message], cwd=woodenman_path, check=True, capture_output=True, text=True)
                 logger.info(f"✅ 提交成功: {commit_message}")
             else:
                 logger.warning("⚠️  没有发现文件更改，将创建空 PR")
             
-            # 5. 推送新分支到远程
+            # 6. 推送新分支到远程
             logger.info(f"⬆️  推送分支 {branch_name} 到远程...")
-            subprocess.run(["git", "push", "-u", "origin", branch_name], check=True, capture_output=True, text=True)
+            subprocess.run(["git", "push", "-u", "origin", branch_name], cwd=woodenman_path, check=True, capture_output=True, text=True)
             logger.info(f"✅ 推送分支 {branch_name} 成功")
             
-            # 6. 创建 PR (使用 GitHub CLI)
+            # 7. 创建 PR (使用 GitHub CLI)
             logger.info("📋 开始创建 Pull Request...")
             pr_cmd = [
                 "gh", "pr", "create",
