@@ -130,8 +130,8 @@ def create_branch_and_pr(woodenman_path: str, branch_name: str, pr_title: str, p
                 "--title", pr_title,
                 "--body", pr_body,
                 "--head", branch_name,
-                "--base", "main",
-                "--label", "linear-integration,auto-generated"  # 添加标签
+                "--base", "main"
+                # 移除不存在的标签，避免创建 PR 失败
             ]
             
             logger.info(f"🔧 执行命令: {' '.join(pr_cmd[:6])}...")
@@ -225,7 +225,7 @@ def call_aider_with_linear_event(formatted_prompt: str, woodenman_path: str, lin
 
 ---
 *🤖 此 PR 由 Linear Webhook Handler 自动创建并关联到 Linear Issue*
-*📋 标签: `linear-integration`, `auto-generated`*
+*📋 自动生成*
 """
         
         # 使用 Vibe 类调用 aider
