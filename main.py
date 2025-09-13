@@ -455,38 +455,54 @@ async def handle_linear_webhook(
                 "entity_id": entity_id
             }
         
-        # 检查是否有标签变更
+        # 检查是否有标签变更 - 使用 updated_from 字段检测标签是否刚刚被添加
+        updated_from = payload.updated_from
         labels = data.get("labels", [])
-        if not labels:
-            logger.info(f"🚫 跳过没有标签的 Issue 事件: {entity_id}")
+        
+        # 检查 updated_from 中是否包含标签变更
+        labels_updated = False
+        if updated_from and "labels" in updated_from:
+            old_labels = updated_from.get("labels", [])
+            new_labels = labels
+            
+            # 比较新旧标签列表
+            old_label_names = {label.get("name", "").lower() for label in old_labels}
+            new_label_names = {label.get("name", "").lower() for label in labels}
+            
+            # 检查 vibe-coding 标签是否刚刚被添加
+            if "vibe-coding" not in old_label_names and "vibe-coding" in new_label_names:
+                labels_updated = True
+                logger.info(f"✅ 检测到 vibe-coding 标签刚刚被添加")
+                logger.info(f"旧标签: {[label.get('name', '') for label in old_labels]}")
+                logger.info(f"新标签: {[label.get('name', '') for label in new_labels]}")
+            else:
+                logger.info(f"🚫 vibe-coding 标签未新增，跳过事件")
+                logger.info(f"旧标签: {[label.get('name', '') for label in old_labels]}")
+                logger.info(f"新标签: {[label.get('name', '') for label in new_labels]}")
+        else:
+            # 如果没有 updated_from 信息，检查当前是否包含 vibe-coding 标签
+            # 这种情况可能是第一次处理该 Issue
+            has_vibe_coding_label = any(
+                label.get("name", "").lower() == "vibe-coding" 
+                for label in labels
+            )
+            if has_vibe_coding_label:
+                labels_updated = True
+                logger.info(f"✅ 首次检测到包含 vibe-coding 标签的 Issue")
+                logger.info(f"当前标签: {[label.get('name', '') for label in labels]}")
+            else:
+                logger.info(f"🚫 Issue 不包含 vibe-coding 标签")
+                logger.info(f"当前标签: {[label.get('name', '') for label in labels]}")
+        
+        if not labels_updated:
             return {
                 "status": "skipped",
-                "message": "Issue 没有标签信息",
-                "entity_type": entity_type,
-                "action": action,
-                "entity_id": entity_id
-            }
-        
-        # 检查是否包含 vibe-coding 标签
-        has_vibe_coding_label = any(
-            label.get("name", "").lower() == "vibe-coding" 
-            for label in labels
-        )
-        
-        if not has_vibe_coding_label:
-            logger.info(f"🚫 跳过不包含 vibe-coding 标签的 Issue: {entity_id}")
-            logger.info(f"当前标签: {[label.get('name', '') for label in labels]}")
-            return {
-                "status": "skipped",
-                "message": "Issue 不包含 vibe-coding 标签",
+                "message": "vibe-coding 标签未新增，跳过事件",
                 "entity_type": entity_type,
                 "action": action,
                 "entity_id": entity_id,
                 "current_labels": [label.get("name", "") for label in labels]
             }
-        
-        logger.info(f"✅ 检测到包含 vibe-coding 标签的 Issue 更新事件: {entity_id}")
-        logger.info(f"标签列表: {[label.get('name', '') for label in labels]}")
         
         # 检查是否最近处理过相同的事件（防重复处理）
         recent_events = session.exec(
