@@ -104,22 +104,59 @@ class Vibe:
             
             logger.info(f"执行命令: {' '.join(cmd)}")
             logger.info(f"工作目录: {self.project_path}")
+            logger.info(f"环境变量配置: {self.get_env_config()}")
             
             # 执行 Aider
-            result = subprocess.run(
+            logger.info("🚀 开始执行 aider...")
+            
+            # 使用 Popen 来实时获取输出
+            process = subprocess.Popen(
                 cmd,
                 cwd=self.project_path,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=300,  # 5分钟超时
-                env=env
+                env=env,
+                bufsize=1,
+                universal_newlines=True
             )
             
+            stdout_lines = []
+            stderr_lines = []
+            
+            # 实时读取输出
+            while True:
+                output = process.stdout.readline()
+                if output == '' and process.poll() is not None:
+                    break
+                if output:
+                    logger.info(f"📤 aider: {output.strip()}")
+                    stdout_lines.append(output)
+            
+            # 读取剩余输出
+            remaining_stdout, remaining_stderr = process.communicate()
+            if remaining_stdout:
+                logger.info(f"📤 aider: {remaining_stdout}")
+                stdout_lines.append(remaining_stdout)
+            if remaining_stderr:
+                logger.info(f"⚠️  aider: {remaining_stderr}")
+                stderr_lines.append(remaining_stderr)
+            
+            returncode = process.returncode
+            stdout = ''.join(stdout_lines)
+            stderr = ''.join(stderr_lines)
+            
+            logger.info(f"✅ aider 执行完成，返回码: {returncode}")
+            if stdout and not any(line.strip() for line in stdout_lines if line.strip()):
+                logger.info(f"📤 aider 完整输出:\n{stdout}")
+            if stderr and not any(line.strip() for line in stderr_lines if line.strip()):
+                logger.info(f"⚠️  aider 完整错误输出:\n{stderr}")
+            
             return {
-                "success": result.returncode == 0,
-                "returncode": result.returncode,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
+                "success": returncode == 0,
+                "returncode": returncode,
+                "stdout": stdout,
+                "stderr": stderr,
                 "command": " ".join(cmd),
                 "project_path": str(self.project_path)
             }

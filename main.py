@@ -96,7 +96,8 @@ def format_reaction_for_aider(action: str, data: dict) -> str:
 def create_branch_and_pr(woodenman_path: str, branch_name: str, pr_title: str, pr_body: str) -> dict:
     """创建新分支并推送，然后创建 PR"""
     try:
-        logger.info(f"创建分支 {branch_name} 并推送")
+        logger.info(f"🌿 开始创建分支 {branch_name} 并推送")
+        logger.info(f"📁 工作目录: {woodenman_path}")
         
         # 切换到 WoodenMan 目录
         original_cwd = os.getcwd()
@@ -104,18 +105,26 @@ def create_branch_and_pr(woodenman_path: str, branch_name: str, pr_title: str, p
         
         try:
             # 1. 确保在 main 分支并拉取最新代码
+            logger.info("🔄 切换到 main 分支...")
             subprocess.run(["git", "checkout", "main"], check=True, capture_output=True, text=True)
+            logger.info("✅ 已切换到 main 分支")
+            
+            logger.info("⬇️  拉取最新代码...")
             subprocess.run(["git", "pull", "origin", "main"], check=True, capture_output=True, text=True)
+            logger.info("✅ 代码拉取完成")
             
             # 2. 创建新分支
+            logger.info(f"🌿 创建新分支 {branch_name}...")
             subprocess.run(["git", "checkout", "-b", branch_name], check=True, capture_output=True, text=True)
-            logger.info(f"创建分支 {branch_name} 成功")
+            logger.info(f"✅ 创建分支 {branch_name} 成功")
             
             # 3. 推送新分支到远程
+            logger.info(f"⬆️  推送分支 {branch_name} 到远程...")
             subprocess.run(["git", "push", "-u", "origin", branch_name], check=True, capture_output=True, text=True)
-            logger.info(f"推送分支 {branch_name} 成功")
+            logger.info(f"✅ 推送分支 {branch_name} 成功")
             
             # 4. 创建 PR (使用 GitHub CLI)
+            logger.info("📋 开始创建 Pull Request...")
             pr_cmd = [
                 "gh", "pr", "create",
                 "--title", pr_title,
@@ -125,11 +134,13 @@ def create_branch_and_pr(woodenman_path: str, branch_name: str, pr_title: str, p
                 "--label", "linear-integration,auto-generated"  # 添加标签
             ]
             
+            logger.info(f"🔧 执行命令: {' '.join(pr_cmd[:6])}...")
             pr_result = subprocess.run(pr_cmd, capture_output=True, text=True, timeout=60)
             
             if pr_result.returncode == 0:
                 pr_url = pr_result.stdout.strip()
-                logger.info(f"创建 PR 成功: {pr_url}")
+                logger.info(f"🎉 创建 PR 成功: {pr_url}")
+                logger.info(f"📋 PR 标题: {pr_title}")
                 return {
                     "success": True,
                     "branch_name": branch_name,
@@ -137,7 +148,8 @@ def create_branch_and_pr(woodenman_path: str, branch_name: str, pr_title: str, p
                     "pr_output": pr_result.stdout
                 }
             else:
-                logger.error(f"创建 PR 失败: {pr_result.stderr}")
+                logger.error(f"❌ 创建 PR 失败: {pr_result.stderr}")
+                logger.error(f"🔧 命令输出: {pr_result.stdout}")
                 return {
                     "success": False,
                     "error": f"创建 PR 失败: {pr_result.stderr}",
@@ -220,17 +232,28 @@ def call_aider_with_linear_event(formatted_prompt: str, woodenman_path: str, lin
         try:
             vibe = Vibe(woodenman_path)
             logger.info("使用 Vibe 类调用 aider")
+            logger.info(f"📝 格式化后的 prompt:\n{formatted_prompt}")
             
             # 调用 vibe.code 方法
+            logger.info("🔄 开始调用 vibe.code()...")
             aider_result = vibe.code(formatted_prompt)
             
             aider_success = aider_result.get("success", False)
+            logger.info(f"🎯 aider 执行结果: {'成功' if aider_success else '失败'}")
             
             if aider_success:
-                logger.info("aider 执行成功，开始创建分支和 PR")
+                logger.info("✅ aider 执行成功，开始创建分支和 PR")
+                logger.info(f"🌿 分支名: {branch_name}")
+                logger.info(f"📋 PR 标题: {pr_title}")
                 
                 # 创建分支和 PR
+                logger.info("🔄 开始创建分支和 PR...")
                 pr_result = create_branch_and_pr(woodenman_path, branch_name, pr_title, pr_body)
+                
+                if pr_result.get("success"):
+                    logger.info(f"🎉 PR 创建成功: {pr_result.get('pr_url', 'Unknown')}")
+                else:
+                    logger.error(f"❌ PR 创建失败: {pr_result.get('error', 'Unknown error')}")
                 
                 return {
                     "success": True,
