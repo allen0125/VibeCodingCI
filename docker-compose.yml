@@ -1,10 +1,10 @@
-version: '3.8'
+version: '3.3'
 
 services:
   linear-webhook:
     build: .
     ports:
-      - "8000:8000"
+      - "9900:8000"
     environment:
       # 数据库配置
       - DATABASE_URL=sqlite:///./linear_webhook.db
@@ -42,27 +42,3 @@ services:
       # 持久化 Aider 配置
       - ./aider_config:/app/.aider
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  # 可选：添加 PostgreSQL 数据库
-  postgres:
-    image: postgres:15-alpine
-    environment:
-      - POSTGRES_DB=linear_webhook
-      - POSTGRES_USER=linear_user
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-linear_password}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    restart: unless-stopped
-    profiles:
-      - postgres
-
-volumes:
-  postgres_data:
