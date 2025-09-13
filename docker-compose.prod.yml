@@ -1,24 +1,17 @@
-version: '3.8'
+version: '3.3'
 
 services:
   linear-webhook:
-    image: ghcr.io/your-username/linear-webhook-handler:latest
+    image: ghcr.io/allen0125/vibecodingci:latest
     container_name: linear-webhook-handler
-    restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "9900:8000"
     env_file:
       - .env
     volumes:
       # 持久化数据
       - ./data:/app/data
       - ./logs:/app/logs
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
     logging:
       driver: "json-file"
       options:
