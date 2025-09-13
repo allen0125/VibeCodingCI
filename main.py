@@ -26,21 +26,21 @@ def verify_linear_signature(signature: str, body: bytes) -> bool:
         logger.warning("未配置 LINEAR_WEBHOOK_SECRET，跳过签名验证")
         return True  # 如果没有配置密钥，跳过验证
     
-    if not signature or not signature.startswith("sha256="):
-        logger.error(f"无效的签名格式: {signature}")
+    if not signature:
+        logger.error("缺少 Linear-Signature 头部")
         return False
     
+    # Linear 使用纯十六进制签名，没有 sha256= 前缀
     expected = hmac.new(
         secret.encode('utf-8'),
         body,
         hashlib.sha256
     ).hexdigest()
     
-    received = signature[7:]
-    is_valid = hmac.compare_digest(received, expected)
+    is_valid = hmac.compare_digest(signature, expected)
     
     if not is_valid:
-        logger.error(f"签名不匹配 - 期望: {expected[:16]}..., 收到: {received[:16]}...")
+        logger.error(f"签名不匹配 - 期望: {expected[:16]}..., 收到: {signature[:16]}...")
     else:
         logger.info("签名验证成功")
     
